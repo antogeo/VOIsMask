@@ -1,0 +1,76 @@
+function ret = spm_ov_voiSel
+global st
+global Voxels
+
+
+if isempty(st)
+    error('goto_max: This routine can only be called as a plugin for spm_orthviews!');
+end
+
+if nargin < 2
+    error('goto_max: Wrong number of arguments. Usage: spm_orthviews(''goto_max'', cmd, volhandle, varargin)');
+end
+
+cmd = lower(varargin{1});
+volhandle = varargin{2};
+
+switch cmd
+
+    % Context menu and callbacks
+    case 'context_menu'
+        item0 = uimenu(varargin{3}, 'Label', 'Goto maximum to get voxels');
+        item1 = uimenu(item0, 'Label', 'Clear values',...
+            'Callback', ['spm_orthviews(''getvox'', ''clear'',' num2str(volhandle) ');']);
+        item2 = uimenu(item0, 'Label', 'Set Values',...
+            'Callback', ['spm_orthviews(''getvox'', ''set'',' num2str(volhandle) ');']);
+        item3 = uimenu(item0, 'Label', 'create mask',...
+            'Callback', ['spm_orthviews(''getvox'', ''create mask'',' num2str(volhandle) ');']);
+        ret = item0;
+
+    case 'clear'
+        Voxels = zeros(2,3);
+    case 'create mask'   
+
+        choice = questdlg('Have u chosen the correct VOIs', ...
+	'confimration Box', 'proceed to mask','reset', 'reset');
+% Handle response
+        switch choice
+            case 'proceed to mask'
+                if (exist('Voxels', 'var')== 1)&(Voxels ~= 0)
+                    voi_carotid(Voxels);
+                else
+                    msgbox('Need to set seeds','Cannot create mask');
+                end
+            case 'reset'
+                Voxels = zeros(2, 3);
+        end
+    case 'set'
+%         Read volume, goto local maxima higher or equal current voxel
+%         intensity
+        dat       = spm_read_vols(st.vols{volhandle});
+        [x, y, z] = ndgrid(1:st.vols{volhandle}.dim(1), 1:st.vols{volhandle}.dim(2), 1:st.vols{volhandle}.dim(3));
+        xyz       = [x(:) y(:) z(:)]';
+        posvx     = round((st.vols{volhandle}.premul*st.vols{volhandle}.mat)\[spm_orthviews('pos');1]);
+        try
+            if isfinite(dat(posvx(1), posvx(2), posvx(3)))
+                sel = isfinite(dat(:)) & dat(:) >= dat(posvx(1), posvx(2), posvx(3)) - eps;
+            else
+                sel = isfinite(dat(:));
+            end
+        catch
+            sel = isfinite(dat(:));
+        end
+        [unused, unused, XYZ]  = spm_max(dat(sel), xyz(:,sel));
+        XYZdist      = bsxfun(@minus,XYZ,posvx(1:3));
+        [unused, nmaxind] = min(sum(XYZdist.^2));
+        posmm        = st.vols{volhandle}.premul*st.vols{volhandle}.mat*[XYZ(:, nmaxind); 1];
+        spm_orthviews('reposition', posmm(1:3));
+        if Voxels == zeros
+            Voxels(1, :) = spm_orthviews('pos', 1);    
+        elseif (mean(Voxels(1, :)) ~= 0 && mean(Voxels(2, :)) == 0)
+            Voxels(2, :) = spm_orthviews('pos', 1);
+        else 
+            Voxels(1, :) = Voxels(2, :);
+            Voxels(2, :) = spm_orthviews('pos', 1);
+        end    
+end
